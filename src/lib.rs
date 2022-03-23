@@ -218,7 +218,7 @@ pub trait MysqlShim<W: Write> {
 
     /// authenticate method for the specified plugin
     fn authenticate_with_db(
-        &mut self,
+        &self,
         _auth_plugin: &str,
         _username: &[u8],
         _salt: &[u8],
@@ -326,7 +326,7 @@ pub trait AsyncMysqlShim<W: Write + Send> {
 
     /// authenticate method for the specified plugin
     async fn authenticate_with_db(
-        &mut self,
+        &self,
         _auth_plugin: &str,
         _username: &[u8],
         _salt: &[u8],
