@@ -216,7 +216,7 @@ pub trait MysqlShim<W: Write> {
         true
     }
 
-    /// authenticate method for the specified plugin
+    /// authenticate method for the specified plugin with db parameter
     fn authenticate_with_db(
         &self,
         _auth_plugin: &str,
@@ -324,7 +324,7 @@ pub trait AsyncMysqlShim<W: Write + Send> {
         true
     }
 
-    /// authenticate method for the specified plugin
+    /// authenticate method for the specified plugin with db parameter
     async fn authenticate_with_db(
         &self,
         _auth_plugin: &str,
@@ -610,10 +610,9 @@ impl<B: MysqlShim<W>, R: Read, W: Write> MysqlIntermediary<B, R, W> {
                     auth_response = auth_response_data.to_vec();
                 }
             }
-
             self.writer.set_seq(seq + 1);
             match handshake.db {
-                Some(d) => {
+                Some(ref d) => {
                     if !self.shim.authenticate_with_db(
                         auth_plugin_expect,
                         &handshake.username,
@@ -657,16 +656,37 @@ impl<B: MysqlShim<W>, R: Read, W: Write> MysqlIntermediary<B, R, W> {
                     }
                 }
             }
+            match handshake.db {
+                Some(d) => {
+                    let db_str_ret = std::str::from_utf8(d.as_slice());
+                    match db_str_ret {
+                        Ok(db_str) => {
+                            let w = InitWriter {
+                                client_capabilities: self.client_capabilities,
+                                writer: &mut self.writer,
+                            };
+                            self.shim.on_init(db_str, w)?;
+                        }
+                        _ => {
+                            writers::write_ok_packet(
+                                &mut self.writer,
+                                self.client_capabilities,
+                                OkResponse::default(),
+                            )?;
+                        }
+                    }
+                }
+                _ => {
+                    writers::write_ok_packet(
+                        &mut self.writer,
+                        self.client_capabilities,
+                        OkResponse::default(),
+                    )?;
+                }
+            }
+            self.writer.flush()?;
+            Ok(())
         }
-
-        writers::write_ok_packet(
-            &mut self.writer,
-            self.client_capabilities,
-            OkResponse::default(),
-        )?;
-        self.writer.flush()?;
-
-        Ok(())
     }
 
     fn run(mut self) -> Result<(), B::Error> {
@@ -1010,8 +1030,9 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
             }
 
             self.writer.set_seq(seq + 1);
+
             match handshake.db {
-                Some(d) => {
+                Some(ref d) => {
                     if !self
                         .shim
                         .authenticate_with_db(
@@ -1063,16 +1084,37 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
                     }
                 }
             }
+            match handshake.db {
+                Some(d) => {
+                    let db_str_ret = std::str::from_utf8(d.as_slice());
+                    match db_str_ret {
+                        Ok(db_str) => {
+                            let w = InitWriter {
+                                client_capabilities: self.client_capabilities,
+                                writer: &mut self.writer,
+                            };
+                            self.shim.on_init(db_str, w).await?;
+                        }
+                        _ => {
+                            writers::write_ok_packet(
+                                &mut self.writer,
+                                self.client_capabilities,
+                                OkResponse::default(),
+                            )?;
+                        }
+                    }
+                }
+                _ => {
+                    writers::write_ok_packet(
+                        &mut self.writer,
+                        self.client_capabilities,
+                        OkResponse::default(),
+                    )?;
+                }
+            }
+            self.writer_flush().await?;
+            Ok(())
         }
-
-        writers::write_ok_packet(
-            &mut self.writer,
-            self.client_capabilities,
-            OkResponse::default(),
-        )?;
-        self.writer_flush().await?;
-
-        Ok(())
     }
 
     async fn writer_flush(&mut self) -> Result<(), B::Error> {
