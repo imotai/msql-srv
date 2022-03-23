@@ -216,6 +216,19 @@ pub trait MysqlShim<W: Write> {
         true
     }
 
+
+    /// authenticate method for the specified plugin
+    fn authenticate_with_db(
+        &self,
+        _auth_plugin: &str,
+        _username: &[u8],
+        _salt: &[u8],
+        _auth_data: &[u8],
+        _db: &[u8],
+    ) -> bool {
+        true
+    }
+
     /// Called when the client issues a request to prepare `query` for later execution.
     ///
     /// The provided [`StatementMetaWriter`](struct.StatementMetaWriter.html) should be used to
@@ -308,6 +321,18 @@ pub trait AsyncMysqlShim<W: Write + Send> {
         _username: &[u8],
         _salt: &[u8],
         _auth_data: &[u8],
+    ) -> bool {
+        true
+    }
+
+    /// authenticate method for the specified plugin
+    async fn authenticate_with_db(
+        &self,
+        _auth_plugin: &str,
+        _username: &[u8],
+        _salt: &[u8],
+        _auth_data: &[u8],
+        _db: &[u8],
     ) -> bool {
         true
     }
@@ -588,25 +613,50 @@ impl<B: MysqlShim<W>, R: Read, W: Write> MysqlIntermediary<B, R, W> {
             }
 
             self.writer.set_seq(seq + 1);
-
-            if !self.shim.authenticate(
-                auth_plugin_expect,
-                &handshake.username,
-                &scramble,
-                auth_response.as_slice(),
-            ) {
-                let err_msg = format!(
-                    "Authenticate failed, user: {:?}, auth_plugin: {:?}",
-                    String::from_utf8_lossy(&handshake.username),
-                    auth_plugin_expect,
-                );
-                writers::write_err(
-                    ErrorKind::ER_ACCESS_DENIED_NO_PASSWORD_ERROR,
-                    err_msg.as_bytes(),
-                    &mut self.writer,
-                )?;
-                self.writer.flush()?;
-                return Err(io::Error::new(io::ErrorKind::PermissionDenied, err_msg).into());
+            match handshake.db {
+                Some(d) => {
+                    if !self.shim.authenticate_with_db(
+                        auth_plugin_expect,
+                        &handshake.username,
+                        &scramble,
+                        auth_response.as_slice(),
+                        d.as_slice(),
+                    ) {
+                        let err_msg = format!(
+                            "Authenticate failed, user: {:?}, auth_plugin: {:?}",
+                            String::from_utf8_lossy(&handshake.username),
+                            auth_plugin_expect,
+                        );
+                        writers::write_err(
+                            ErrorKind::ER_ACCESS_DENIED_NO_PASSWORD_ERROR,
+                            err_msg.as_bytes(),
+                            &mut self.writer,
+                        )?;
+                        self.writer.flush()?;
+                        return Err(io::Error::new(io::ErrorKind::PermissionDenied, err_msg).into());
+                    }
+                }
+                _ => {
+                    if !self.shim.authenticate(
+                        auth_plugin_expect,
+                        &handshake.username,
+                        &scramble,
+                        auth_response.as_slice(),
+                    ) {
+                        let err_msg = format!(
+                            "Authenticate failed, user: {:?}, auth_plugin: {:?}",
+                            String::from_utf8_lossy(&handshake.username),
+                            auth_plugin_expect,
+                        );
+                        writers::write_err(
+                            ErrorKind::ER_ACCESS_DENIED_NO_PASSWORD_ERROR,
+                            err_msg.as_bytes(),
+                            &mut self.writer,
+                        )?;
+                        self.writer.flush()?;
+                        return Err(io::Error::new(io::ErrorKind::PermissionDenied, err_msg).into());
+                    }
+                }
             }
         }
 
@@ -961,29 +1011,58 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
             }
 
             self.writer.set_seq(seq + 1);
-
-            if !self
-                .shim
-                .authenticate(
-                    auth_plugin_expect,
-                    &handshake.username,
-                    &scramble,
-                    auth_response.as_slice(),
-                )
-                .await
-            {
-                let err_msg = format!(
-                    "Authenticate failed, user: {:?}, auth_plugin: {:?}",
-                    String::from_utf8_lossy(&handshake.username),
-                    auth_plugin_expect,
-                );
-                writers::write_err(
-                    ErrorKind::ER_ACCESS_DENIED_NO_PASSWORD_ERROR,
-                    err_msg.as_bytes(),
-                    &mut self.writer,
-                )?;
-                self.writer_flush().await?;
-                return Err(io::Error::new(io::ErrorKind::PermissionDenied, err_msg).into());
+            match handshake.db {
+                Some(d) => {
+                    if !self
+                        .shim
+                        .authenticate_with_db(
+                            auth_plugin_expect,
+                            &handshake.username,
+                            &scramble,
+                            auth_response.as_slice(),
+                            d.as_slice(),
+                        )
+                        .await
+                    {
+                        let err_msg = format!(
+                            "Authenticate failed, user: {:?}, auth_plugin: {:?}",
+                            String::from_utf8_lossy(&handshake.username),
+                            auth_plugin_expect,
+                        );
+                        writers::write_err(
+                            ErrorKind::ER_ACCESS_DENIED_NO_PASSWORD_ERROR,
+                            err_msg.as_bytes(),
+                            &mut self.writer,
+                        )?;
+                        self.writer_flush().await?;
+                        return Err(io::Error::new(io::ErrorKind::PermissionDenied, err_msg).into());
+                    }
+                }
+                _ => {
+                    if !self
+                        .shim
+                        .authenticate(
+                            auth_plugin_expect,
+                            &handshake.username,
+                            &scramble,
+                            auth_response.as_slice(),
+                        )
+                        .await
+                    {
+                        let err_msg = format!(
+                            "Authenticate failed, user: {:?}, auth_plugin: {:?}",
+                            String::from_utf8_lossy(&handshake.username),
+                            auth_plugin_expect,
+                        );
+                        writers::write_err(
+                            ErrorKind::ER_ACCESS_DENIED_NO_PASSWORD_ERROR,
+                            err_msg.as_bytes(),
+                            &mut self.writer,
+                        )?;
+                        self.writer_flush().await?;
+                        return Err(io::Error::new(io::ErrorKind::PermissionDenied, err_msg).into());
+                    }
+                }
             }
         }
 
