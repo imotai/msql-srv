@@ -707,20 +707,36 @@ impl<B: MysqlShim<W>, R: Read, W: Write> MysqlIntermediary<B, R, W> {
                         );
                         let var = &q[b"SELECT @@".len()..];
                         let var_with_at = &q[b"SELECT ".len()..];
-                        let cols = &[Column {
-                            table: String::new(),
-                            column: String::from_utf8_lossy(var_with_at).to_string(),
-                            coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
-                            colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
-                        }];
-
                         match var {
                             b"max_allowed_packet" => {
+                                let cols = &[Column {
+                                    table: String::new(),
+                                    column: String::from_utf8_lossy(var_with_at).to_string(),
+                                    coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
+                                    colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
+                                }];
                                 let mut w = w.start(cols)?;
                                 w.write_row(iter::once(67108864u32))?;
                                 w.finish()?;
                             }
+                            b"transaction_isolation" => {
+                                let cols = &[Column {
+                                    table: String::new(),
+                                    column: String::from_utf8_lossy(var_with_at).to_string(),
+                                    coltype: myc::constants::ColumnType::MYSQL_TYPE_STRING,
+                                    colflags: myc::constants::ColumnFlags::empty(),
+                                }];
+                                let mut w = w.start(cols)?;
+                                w.write_row(iter::once("REPEATABLE-READ"))?;
+                                w.finish()?;
+                            }
                             _ => {
+                                let cols = &[Column {
+                                    table: String::new(),
+                                    column: String::from_utf8_lossy(var_with_at).to_string(),
+                                    coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
+                                    colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
+                                }];
                                 let mut w = w.start(cols)?;
                                 w.write_row(iter::once(0))?;
                                 w.finish()?;
