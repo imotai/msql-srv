@@ -1110,34 +1110,7 @@ impl<B: AsyncMysqlShim<Cursor<Vec<u8>>> + Send + Sync, S: AsyncRead + AsyncWrite
 
             match cmd {
                 Command::Query(q) => {
-                    if q.starts_with(b"SELECT @@") || q.starts_with(b"select @@") {
-                        let w = QueryResultWriter::new(
-                            &mut self.writer,
-                            false,
-                            self.client_capabilities,
-                        );
-                        let var = &q[b"SELECT @@".len()..];
-                        let var_with_at = &q[b"SELECT ".len()..];
-                        let cols = &[Column {
-                            table: String::new(),
-                            column: String::from_utf8_lossy(var_with_at).to_string(),
-                            coltype: myc::constants::ColumnType::MYSQL_TYPE_LONG,
-                            colflags: myc::constants::ColumnFlags::UNSIGNED_FLAG,
-                        }];
-
-                        match var {
-                            b"max_allowed_packet" => {
-                                let mut w = w.start(cols)?;
-                                w.write_row(iter::once(67108864u32))?;
-                                w.finish()?;
-                            }
-                            _ => {
-                                let mut w = w.start(cols)?;
-                                w.write_row(iter::once(0))?;
-                                w.finish()?;
-                            }
-                        }
-                    } else if !self.process_use_statement_on_query
+                    if !self.process_use_statement_on_query
                         && (q.starts_with(b"USE ") || q.starts_with(b"use "))
                     {
                         let w = InitWriter {
